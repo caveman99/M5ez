@@ -714,6 +714,9 @@ void ezSettings::begin() {
 	#ifdef M5EZ_FACES
 		ez.faces.begin();
 	#endif	
+	#ifdef M5EZ_CARDKB
+		ez.cardkb.begin();
+	#endif
 	if (ez.themes.size() > 1) {
 		ez.settings.menuObj.addItem("Theme chooser", ez.theme->menu);
 	}
@@ -1087,6 +1090,82 @@ void ezSettings::defaults() {
 	}
 	
 	bool ezFACES::on() {
+		return _on;
+	}
+
+#endif
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//   C A R D K B
+//
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#ifdef M5EZ_CARDKB
+
+	bool ezCARDKB::_on;
+
+	void ezCARDKB::begin() {
+		Preferences prefs;
+		prefs.begin("M5ez", true);	// read-only
+		_on = prefs.getBool("cardkb_on", false);
+		if (_on) {
+			Wire.begin();
+			pinMode(5, INPUT);
+			digitalWrite(5,HIGH);
+			Wire.flush();
+		}
+		prefs.end();
+		ez.settings.menuObj.addItem("CARDKB keyboard", ez.cardkb.menu);
+	}
+	
+	void ezCARDKB::menu() {
+		bool start_state = _on;
+		while (true) {
+			ezMenu cardkbmenu ("CARDKB keyboard");
+			cardkbmenu.txtSmall();
+			cardkbmenu.buttons("up#Back#select##down#");
+			cardkbmenu.addItem("on|CARDKB keyboard\t" + (String)(_on ? "attached" : "not attached"));
+			switch (cardkbmenu.runOnce()) {
+				case 1:
+					_on = !_on;
+					if (_on) {
+						pinMode(5, INPUT);
+						digitalWrite(5,HIGH);
+						Wire.flush();
+					}
+					break;
+				case 0:
+					if (_on != start_state) {
+						Preferences prefs;
+						prefs.begin("M5ez");
+						prefs.putBool("cardkb_on", _on);
+						prefs.end();
+					}
+					return;
+				//
+			}
+		}
+	}
+
+	String ezCARDKB::poll() {
+		if (digitalRead(5) == LOW) {
+			Wire.requestFrom(0x5f, 1);
+			String out = "";   
+			while (Wire.available()) {
+				out += (char) Wire.read();
+			}
+			#ifdef M5EZ_BACKLIGHT
+				ez.backlight.activity();
+			#endif
+			return out;
+		}
+		return "";
+	}
+	
+	bool ezCARDKB::on() {
 		return _on;
 	}
 
@@ -2172,6 +2251,9 @@ bool M5ez::_in_event = false;
 #ifdef M5EZ_FACES
 	ezFACES M5ez::faces;
 #endif	
+#ifdef M5EZ_CARDKB
+	ezCARDKB M5ez::cardkb;
+#endif	
 std::vector<event_t> M5ez::_events;
 
 // ez.textInput
@@ -2299,6 +2381,12 @@ String M5ez::textInput(String header /* = "" */, String defaultText /* = "" */) 
 			ez.faces.poll(); 	// flush key buffer in FACES
 		}
 	#endif
+	#ifdef M5EZ_CARDKB
+		if (ez.cardkb.on()) {
+			current_kb = locked_kb = prev_kb = ez.theme->input_faces_btns;
+			ez.cardkb.poll(); 	// flush key buffer
+		}
+	#endif
 	String tmpstr;	
 	String text = defaultText;
 	ez.screen.clear();
@@ -2311,6 +2399,9 @@ String M5ez::textInput(String header /* = "" */, String defaultText /* = "" */) 
 		key = ez.buttons.poll();
 		#ifdef M5EZ_FACES
 			if (ez.faces.on() && key == "") key = ez.faces.poll();
+		#endif
+		#ifdef M5EZ_CARDKB
+			if (ez.cardkb.on() && key == "") key = ez.cardkb.poll();
 		#endif
 		if (key == "Done" || key == (String)char(13)) return text;
 		if (key.substring(0, 2) == "KB") {
@@ -2419,6 +2510,13 @@ String M5ez::textBox(String header /*= ""*/, String text /*= "" */, bool readonl
 			readonly = true;
 		}
 	#endif
+	#ifdef M5EZ_CARDKB
+		if (ez.cardkb.on()) {
+			ez.cardkb.poll(); 	// flush key buffer in FACES
+		} else {
+			readonly = true;
+		}
+	#endif
 	std::vector<line_t> lines;
 	ez.screen.clear();
 	uint16_t cursor_pos = text.length();
@@ -2503,6 +2601,9 @@ String M5ez::textBox(String header /*= ""*/, String text /*= "" */, bool readonl
 		String key = ez.buttons.poll();
 		#ifdef M5EZ_FACES
 			if (ez.faces.on() && key == "") key = ez.faces.poll();
+		#endif
+		#ifdef M5EZ_CARDKB
+			if (ez.cardkb.on() && key == "") key = ez.cardkb.poll();
 		#endif
 		if (key == "down") {
 			offset += lines_per_screen;
